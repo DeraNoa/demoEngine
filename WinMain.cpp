@@ -1,5 +1,9 @@
 #include <windows.h>
+#include "D3D12App.h"
 
+extern void InitD3D12(HWND hwnd);
+extern void Render();
+extern void CleanD3D12();
 
 // ウィンドウに送られてくるメッセージ（イベント）を処理する
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -35,6 +39,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 	// ウィンドウを表示
 	ShowWindow(hwnd, nCmdShow); 
 
+	InitD3D12(hwnd);
+	Render(); // ← 毎フレーム描画
 
 	// メッセージループ(イベント処理)
 	MSG msg = {};
@@ -48,8 +54,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 			DispatchMessage(&msg); // WndProc に送る
 		}
 		// ここにゲームの更新処理や描画処理を追加することができます。
+		
 
 
 	}
+	CleanD3D12(); // ← 解放
 	return 0; // アプリケーションの終了コードを返す
 }
