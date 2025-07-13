@@ -49,6 +49,18 @@ Vertex triangleVertices[] = {
     { { -0.5f, -0.5f, 0.0f },{ 0.0f, 0.0f, 1.0f, 1.0f }}
 };
 
+// --- カメラ構造体とグローバル変数 ---
+struct Camera {
+    XMFLOAT3 position = { 0.0f, 0.0f, -3.0f };
+    float yaw = 0.0f;
+    float pitch = 0.0f;
+    float zoom = 1.0f;
+};
+
+Camera g_camera;
+
+
+
 void InitD3D12(HWND hwnd) {
     ComPtr<IDXGIFactory4> factory;
     CreateDXGIFactory1(IID_PPV_ARGS(&factory));
@@ -171,8 +183,24 @@ void Render() {
     XMMATRIX scale = XMMatrixScaling(g_scale, g_scale, 1.0f);
     XMMATRIX rotate = XMMatrixRotationZ(g_rotationAngle);
     XMMATRIX model = scale * rotate;
-    XMMATRIX view = XMMatrixTranslation(g_offsetX, g_offsetY, 0.0f); // パン（平行移動）
-    XMMATRIX proj = XMMatrixOrthographicOffCenterLH(-1, 1, -1, 1, 0.0f, 1.0f);
+    // 回転行列（yaw: y軸、pitch: x軸）
+    XMMATRIX rotation = XMMatrixRotationRollPitchYaw(g_camera.pitch, g_camera.yaw, 0.0f);
+    // カメラの位置（回転考慮後）
+    XMVECTOR eyePos = XMVector3TransformCoord(XMLoadFloat3(&g_camera.position), rotation);
+    // View行列（カメラの視点からワールドを見る）
+    XMMATRIX view = XMMatrixLookAtLH(
+        eyePos,                          // 視点
+        XMVectorZero(),                  // 注視点（原点）
+        XMVectorSet(0, 1, 0, 0)          // 上方向
+    );
+    // Projection行列（ズーム考慮）
+    float zoom = g_camera.zoom;
+    XMMATRIX proj = XMMatrixOrthographicOffCenterLH(
+        -1.0f * zoom, 1.0f * zoom,
+        -1.0f * zoom, 1.0f * zoom,
+        0.1f, 100.0f
+    );
+
     cbData.mvp = XMMatrixTranspose(model * view * proj);
 
     void* cbPtr;

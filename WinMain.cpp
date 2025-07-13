@@ -7,52 +7,55 @@ extern void Render();
 extern void CleanD3D12();
 
 
-
 // ウィンドウに送られてくるメッセージ（イベント）を処理する
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
 	switch (msg)
 	{
 	case WM_LBUTTONDOWN:
-		//g_mouseDown = true;
+		g_mouseDown = true;
+		//g_rightMouseDown = true;
+		g_lastMousePos.x = LOWORD(lParam);
+		g_lastMousePos.y = HIWORD(lParam);
+		break;
+	case WM_RBUTTONDOWN:
 		g_rightMouseDown = true;
 		g_lastMousePos.x = LOWORD(lParam);
 		g_lastMousePos.y = HIWORD(lParam);
 		break;
-
 	case WM_LBUTTONUP:
 		//g_mouseDown = false;
 		g_rightMouseDown = false;
 		break;
-
+	case WM_RBUTTONUP:
+		g_rightMouseDown = false;
+		break;
 	case WM_MOUSEMOVE:
 		if (g_mouseDown) {
-			POINT current;
-			current.x = LOWORD(lParam);
-			current.y = HIWORD(lParam);
-			float dx = (float)(current.x - g_lastMousePos.x);
-			g_rotationAngle += dx * 0.01f;
+			POINT current = { LOWORD(lParam), HIWORD(lParam) };
+			float dx = static_cast<float>(current.x - g_lastMousePos.x);
+			float dy = static_cast<float>(current.y - g_lastMousePos.y);
+
+			g_camera.yaw += dx * 0.005f;
+			g_camera.pitch += dy * 0.005f;
+
 			g_lastMousePos = current;
 		}else if (g_rightMouseDown) { // 右ドラッグ＝平行移動
-			POINT current;
-			current.x = LOWORD(lParam);
-			current.y = HIWORD(lParam);
-        float dx = static_cast<float>(current.x - g_lastMousePos.x);
-        float dy = static_cast<float>(current.y - g_lastMousePos.y);
+			POINT current = { LOWORD(lParam), HIWORD(lParam) };
+			float dx = static_cast<float>(current.x - g_lastMousePos.x);
+			float dy = static_cast<float>(current.y - g_lastMousePos.y);
 
-        g_offsetX += dx * 0.002f; // スケーリングに応じて調整してもOK
-        g_offsetY -= dy * 0.002f;
+			g_camera.position.x -= dx * 0.01f;
+			g_camera.position.y += dy * 0.01f;
 
-        g_lastMousePos = current;
-        }
+			g_lastMousePos = current;
+		}
 		break;
 	case WM_MOUSEWHEEL:
 	{
 		short delta = GET_WHEEL_DELTA_WPARAM(wParam);
-		if (delta > 0)
-			g_scale *= 1.1f;  // 拡大
-		else
-			g_scale *= 0.9f;  // 縮小
+		g_camera.zoom += delta * 0.001f;
+		if (g_camera.zoom < 0.1f) g_camera.zoom = 0.1f;
 		break;
 	}
 	case WM_DESTROY:
