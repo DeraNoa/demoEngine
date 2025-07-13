@@ -125,11 +125,13 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="D3D12App.cpp" />
+    <ClCompile Include="InputState.cpp" />
     <ClCompile Include="WinMain.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="D3D12App.h" />
     <ClInclude Include="d3dx12.h" />
+    <ClInclude Include="InputState.h" />
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="triangle.hlsl">

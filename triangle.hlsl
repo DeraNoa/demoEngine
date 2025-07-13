@@ -1,9 +1,12 @@
-// triangle.hlsl - 頂点シェーダとピクセルシェーダ
+cbuffer MVPBuffer : register(b0)
+{
+    float4x4 mvpMatrix;
+}
 
 struct VSInput
 {
     float3 position : POSITION;
-    float4 color : COLOR; 
+    float4 color : COLOR;
 };
 
 struct PSInput
@@ -12,17 +15,15 @@ struct PSInput
     float4 color : COLOR;
 };
 
-// 頂点シェーダ
 PSInput VSMain(VSInput input)
 {
     PSInput output;
-    output.position = float4(input.position, 1.0);
-    output.color = input.color; // 入力の色をそのまま出力
+    output.position = mul(mvpMatrix, float4(input.position, 1.0));
+    output.color = input.color;
     return output;
 }
 
-// ピクセルシェーダ
 float4 PSMain(PSInput input) : SV_TARGET
 {
-    return input.color; // 入力の色をそのまま出力
+    return input.color;
 }

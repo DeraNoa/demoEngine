@@ -1,21 +1,52 @@
 #include <windows.h>
 #include "D3D12App.h"
+#include "InputState.h"
 
 extern void InitD3D12(HWND hwnd);
 extern void Render();
 extern void CleanD3D12();
 
+
+
 // ウィンドウに送られてくるメッセージ（イベント）を処理する
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
-	// ウィンドウが閉じられたとき
-	if (msg == WM_DESTROY)
+	switch (msg)
 	{
-		// アプリを終了するように指示
+	case WM_LBUTTONDOWN:
+		g_mouseDown = true;
+		g_lastMousePos.x = LOWORD(lParam);
+		g_lastMousePos.y = HIWORD(lParam);
+		break;
+
+	case WM_LBUTTONUP:
+		g_mouseDown = false;
+		break;
+
+	case WM_MOUSEMOVE:
+		if (g_mouseDown) {
+			POINT current;
+			current.x = LOWORD(lParam);
+			current.y = HIWORD(lParam);
+			float dx = (float)(current.x - g_lastMousePos.x);
+			g_rotationAngle += dx * 0.01f;
+			g_lastMousePos = current;
+		}
+		break;
+	case WM_MOUSEWHEEL:
+	{
+		short delta = GET_WHEEL_DELTA_WPARAM(wParam);
+		if (delta > 0)
+			g_scale *= 1.1f;  // 拡大
+		else
+			g_scale *= 0.9f;  // 縮小
+		break;
+	}
+	case WM_DESTROY:
 		PostQuitMessage(0);
 		return 0;
 	}
-	//既定のウィンドウプロシージャを呼び出して、アプリケーションが処理しないウィンドウメッセージに対して、既定の処理を提供します。
+
 	return DefWindowProc(hwnd, msg, wParam, lParam);
 }
 
@@ -40,7 +71,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 	ShowWindow(hwnd, nCmdShow); 
 
 	InitD3D12(hwnd);
-	Render(); // ← 毎フレーム描画
+	
 
 	// メッセージループ(イベント処理)
 	MSG msg = {};
@@ -48,14 +79,19 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow)
 	{
 		if (PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE))
 		{
+			if (msg.message == WM_QUIT)
+			{
+				break;
+			}
 			// メッセージを変換
 			TranslateMessage(&msg);// メッセージをディスパッチ
 			// メッセージをディスパッチ
 			DispatchMessage(&msg); // WndProc に送る
-		}
+		}else
+
 		// ここにゲームの更新処理や描画処理を追加することができます。
 		
-
+		Render(); // ← 毎フレーム描画
 
 	}
 	CleanD3D12(); // ← 解放

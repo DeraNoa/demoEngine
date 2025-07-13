@@ -1,4 +1,4 @@
-// D3D12App.cpp - DirectX 12 初期化と描画（青い画面）
+// D3D12App.cpp - DirectX 12 初期化と三角形描画（定数バッファ付き）
 #include <windows.h>
 #include <d3d12.h>
 #include <dxgi1_6.h>
@@ -6,38 +6,47 @@
 #include <wrl.h>
 #include <fstream>
 #include <vector>
+#include <DirectXMath.h>
+#include "InputState.h"
+using namespace DirectX;
 using namespace Microsoft::WRL;
 
 #pragma comment(lib, "d3d12.lib")
 #pragma comment(lib, "dxgi.lib")
 
-static ComPtr<ID3D12Device> device; //GPU との通信を行うオブジェクト。
-static ComPtr<ID3D12CommandQueue> commandQueue;//GPU に対して命令を送るためのキュー
-static ComPtr<IDXGISwapChain3> swapChain;//描画結果をウィンドウに表示するためのフレームバッファの管理
-static ComPtr<ID3D12DescriptorHeap> rtvHeap;//レンダーターゲットビューを格納する専用の「ヒープ」
-static ComPtr<ID3D12Resource> renderTargets[2]; // GPUが描画する実体のバックバッファ
 
-static ComPtr<ID3D12CommandAllocator> commandAllocator;//メモリを確保する役割
-static ComPtr<ID3D12GraphicsCommandList> commandList;//GPU に渡す命令を記録するオブジェクト
-//以下頂点バッファ作成用のメンバ変数
+// --- グローバル変数定義 ---
+static ComPtr<ID3D12Device> device;
+static ComPtr<ID3D12CommandQueue> commandQueue;
+static ComPtr<IDXGISwapChain3> swapChain;
+static ComPtr<ID3D12DescriptorHeap> rtvHeap;
+static ComPtr<ID3D12Resource> renderTargets[2];
+static ComPtr<ID3D12CommandAllocator> commandAllocator;
+static ComPtr<ID3D12GraphicsCommandList> commandList;
 static ComPtr<ID3D12Resource> vertexBuffer;
 static D3D12_VERTEX_BUFFER_VIEW vertexBufferView;
 static ComPtr<ID3D12RootSignature> rootSignature;
 static ComPtr<ID3D12PipelineState> pipelineState;
+static ComPtr<ID3D12Resource> constantBuffer;
+
+extern float g_rotationAngle;
+
+struct alignas(256) ConstantBuffer {
+    XMMATRIX mvp;
+};
+static ConstantBuffer cbData;
 
 std::vector<char> LoadShaderFile(const std::wstring& filename);
 
-//三角形の頂点構造体とデータ定義
 struct Vertex {
-    float position[3];// x, y, z 座標
-    float color[4]; // RGBA カラーを追加
+    float position[3];
+    float color[4];
 };
 
-// 画面中央に表示される三角形の頂点データ
 Vertex triangleVertices[] = {
-    { {  0.0f,  0.5f, 0.0f },{ 1.0f, 0.0f, 0.0f, 1.0f }},// 上
-    { {  0.5f, -0.5f, 0.0f },{ 0.0f, 1.0f, 0.0f, 1.0f }},// 右下
-    { { -0.5f, -0.5f, 0.0f },{ 0.0f, 0.0f, 1.0f, 1.0f }} // 左下
+    { {  0.0f,  0.5f, 0.0f },{ 1.0f, 0.0f, 0.0f, 1.0f }},
+    { {  0.5f, -0.5f, 0.0f },{ 0.0f, 1.0f, 0.0f, 1.0f }},
+    { { -0.5f, -0.5f, 0.0f },{ 0.0f, 0.0f, 1.0f, 1.0f }}
 };
 
 void InitD3D12(HWND hwnd) {
@@ -79,19 +88,22 @@ void InitD3D12(HWND hwnd) {
     device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&commandAllocator));
     device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, commandAllocator.Get(), nullptr, IID_PPV_ARGS(&commandList));
 
-    // --- 頂点レイアウト定義 ---
     D3D12_INPUT_ELEMENT_DESC inputLayout[] = {
         { "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
         { "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
     };
 
+    D3D12_ROOT_PARAMETER rootParams[1] = {};
+    rootParams[0].ParameterType = D3D12_ROOT_PARAMETER_TYPE_CBV;
+    rootParams[0].Descriptor.ShaderRegister = 0;
+    rootParams[0].Descriptor.RegisterSpace = 0;
+    rootParams[0].ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX;
+
     CD3DX12_ROOT_SIGNATURE_DESC rootSignatureDesc;
-    rootSignatureDesc.Init(0, nullptr, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+    rootSignatureDesc.Init(1, rootParams, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
 
-    ComPtr<ID3DBlob> serializedRootSig = nullptr;
-    ComPtr<ID3DBlob> errorBlob = nullptr;
+    ComPtr<ID3DBlob> serializedRootSig, errorBlob;
     D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, &serializedRootSig, &errorBlob);
-
     device->CreateRootSignature(0, serializedRootSig->GetBufferPointer(), serializedRootSig->GetBufferSize(), IID_PPV_ARGS(&rootSignature));
 
     std::vector<char> vsByteCode = LoadShaderFile(L"VS.cso");
@@ -112,24 +124,24 @@ void InitD3D12(HWND hwnd) {
     psoDesc.NumRenderTargets = 1;
     psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
     psoDesc.SampleDesc.Count = 1;
-
     device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&pipelineState));
 
-    // --- 頂点バッファ作成 ---
     const UINT vertexBufferSize = sizeof(triangleVertices);
     CD3DX12_HEAP_PROPERTIES heapProps(D3D12_HEAP_TYPE_UPLOAD);
     CD3DX12_RESOURCE_DESC bufferDesc = CD3DX12_RESOURCE_DESC::Buffer(vertexBufferSize);
-
     device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &bufferDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&vertexBuffer));
 
-    void* pVertexDataBegin;
-    vertexBuffer->Map(0, nullptr, &pVertexDataBegin);
-    memcpy(pVertexDataBegin, triangleVertices, sizeof(triangleVertices));
+    void* pVertexData;
+    vertexBuffer->Map(0, nullptr, &pVertexData);
+    memcpy(pVertexData, triangleVertices, vertexBufferSize);
     vertexBuffer->Unmap(0, nullptr);
 
     vertexBufferView.BufferLocation = vertexBuffer->GetGPUVirtualAddress();
     vertexBufferView.StrideInBytes = sizeof(Vertex);
     vertexBufferView.SizeInBytes = vertexBufferSize;
+
+    CD3DX12_RESOURCE_DESC cbResDesc = CD3DX12_RESOURCE_DESC::Buffer((sizeof(ConstantBuffer) + 255) & ~255);
+    device->CreateCommittedResource(&heapProps, D3D12_HEAP_FLAG_NONE, &cbResDesc, D3D12_RESOURCE_STATE_GENERIC_READ, nullptr, IID_PPV_ARGS(&constantBuffer));
 
     commandList->Close();
 }
@@ -139,7 +151,6 @@ void Render() {
     commandList->Reset(commandAllocator.Get(), pipelineState.Get());
 
     UINT backBufferIndex = swapChain->GetCurrentBackBufferIndex();
-
     D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = rtvHeap->GetCPUDescriptorHandleForHeapStart();
     UINT rtvDescriptorSize = device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
     rtvHandle.ptr += backBufferIndex * rtvDescriptorSize;
@@ -154,6 +165,23 @@ void Render() {
     commandList->SetPipelineState(pipelineState.Get());
     commandList->SetGraphicsRootSignature(rootSignature.Get());
 
+    char buf[64];
+    sprintf_s(buf, "angle = %.2f\n", g_rotationAngle);
+    OutputDebugStringA(buf);
+    XMMATRIX scale = XMMatrixScaling(g_scale, g_scale, 1.0f);
+    XMMATRIX rotate = XMMatrixRotationZ(g_rotationAngle);
+    XMMATRIX model = scale * rotate;
+    XMMATRIX view = XMMatrixIdentity();
+    XMMATRIX proj = XMMatrixOrthographicOffCenterLH(-1, 1, -1, 1, 0.0f, 1.0f);
+    cbData.mvp = XMMatrixTranspose(model * view * proj);
+
+    void* cbPtr;
+    constantBuffer->Map(0, nullptr, &cbPtr);
+    memcpy(cbPtr, &cbData, sizeof(cbData));
+    constantBuffer->Unmap(0, nullptr);
+
+    commandList->SetGraphicsRootConstantBufferView(0, constantBuffer->GetGPUVirtualAddress());
+
     D3D12_VIEWPORT viewport = { 0, 0, 800, 600, 0.0f, 1.0f };
     commandList->RSSetViewports(1, &viewport);
     D3D12_RECT scissorRect = { 0, 0, 800, 600 };
@@ -165,29 +193,24 @@ void Render() {
 
     CD3DX12_RESOURCE_BARRIER barrier2 = CD3DX12_RESOURCE_BARRIER::Transition(renderTargets[backBufferIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
     commandList->ResourceBarrier(1, &barrier2);
-
+     
     commandList->Close();
-
     ID3D12CommandList* cmds[] = { commandList.Get() };
     commandQueue->ExecuteCommandLists(1, cmds);
     swapChain->Present(1, 0);
 }
 
-void CleanD3D12() {
-    // 自動開放（ComPtr）なので何もしなくてOK
-}
+void CleanD3D12() {}
 
 std::vector<char> LoadShaderFile(const std::wstring& filename) {
     std::ifstream file(filename, std::ios::binary);
     if (!file) {
-        MessageBoxA(nullptr, "シェーダーファイルが見つかりません", "Error", MB_OK);
+        MessageBoxA(nullptr, "Shader file not found", "Error", MB_OK);
         return {};
     }
-
     file.seekg(0, std::ios::end);
     size_t size = file.tellg();
     file.seekg(0, std::ios::beg);
-
     std::vector<char> buffer(size);
     file.read(buffer.data(), size);
     return buffer;
