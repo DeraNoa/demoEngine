@@ -171,7 +171,7 @@ void Render() {
     XMMATRIX scale = XMMatrixScaling(g_scale, g_scale, 1.0f);
     XMMATRIX rotate = XMMatrixRotationZ(g_rotationAngle);
     XMMATRIX model = scale * rotate;
-    XMMATRIX view = XMMatrixIdentity();
+    XMMATRIX view = XMMatrixTranslation(g_offsetX, g_offsetY, 0.0f); // パン（平行移動）
     XMMATRIX proj = XMMatrixOrthographicOffCenterLH(-1, 1, -1, 1, 0.0f, 1.0f);
     cbData.mvp = XMMatrixTranspose(model * view * proj);
 

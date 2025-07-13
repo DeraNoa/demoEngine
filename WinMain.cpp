@@ -14,13 +14,15 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	switch (msg)
 	{
 	case WM_LBUTTONDOWN:
-		g_mouseDown = true;
+		//g_mouseDown = true;
+		g_rightMouseDown = true;
 		g_lastMousePos.x = LOWORD(lParam);
 		g_lastMousePos.y = HIWORD(lParam);
 		break;
 
 	case WM_LBUTTONUP:
-		g_mouseDown = false;
+		//g_mouseDown = false;
+		g_rightMouseDown = false;
 		break;
 
 	case WM_MOUSEMOVE:
@@ -31,7 +33,18 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 			float dx = (float)(current.x - g_lastMousePos.x);
 			g_rotationAngle += dx * 0.01f;
 			g_lastMousePos = current;
-		}
+		}else if (g_rightMouseDown) { // 右ドラッグ＝平行移動
+			POINT current;
+			current.x = LOWORD(lParam);
+			current.y = HIWORD(lParam);
+        float dx = static_cast<float>(current.x - g_lastMousePos.x);
+        float dy = static_cast<float>(current.y - g_lastMousePos.y);
+
+        g_offsetX += dx * 0.002f; // スケーリングに応じて調整してもOK
+        g_offsetY -= dy * 0.002f;
+
+        g_lastMousePos = current;
+        }
 		break;
 	case WM_MOUSEWHEEL:
 	{
